@@ -24,10 +24,12 @@ BEGIN
         encounter_type INT,
         location_id INT,
         location_name VARCHAR(100),
-		    encounter_datetime DATETIME,
+	    	encounter_date DATE,
         cur_visit_type INT,
         person_name VARCHAR(255),
         age INT,
+        patient_covered_by_nhif INT,
+        nhif_status INT,
         gender CHAR(20),
         identifiers VARCHAR(255),
         cancer_type SMALLINT,
@@ -226,16 +228,18 @@ BEGIN
         );
 
         DROP TEMPORARY TABLE IF EXISTS flat_onc_triage_general_treatment_0;
-        CREATE TEMPORARY TABLE flat_onc_triage_general_treatment_0 (INDEX encounter_id (encounter_id), INDEX person_enc (person_id, encounter_datetime))
+        CREATE TEMPORARY TABLE flat_onc_triage_general_treatment_0 (INDEX encounter_id (encounter_id), INDEX person_enc (person_id))
         (SELECT 
             * 
         FROM
           flat_onc_triage_general_treatment_0a
         ORDER BY
-          person_id, DATE(encounter_datetime)
+          person_id
         );
                         
-		SET @cur_visit_type := null;
+		    SET @cur_visit_type := null;
+        SET @patient_covered_by_nhif := null;
+        SET @nhif_status := null;
         SET @cancer_type := null;
         SET @other_cancer := null;
         SET @type_of_sarcoma := null;
@@ -262,8 +266,8 @@ BEGIN
               l.name AS location_name,
               t1.encounter_datetime,
               CASE
-                  WHEN obs REGEXP '!!1839=1911!!' THEN @cur_visit_type := 1
-                  WHEN obs REGEXP '!!1839=1246!!' THEN @cur_visit_type := 2
+                  WHEN obs REGEXP '!!1834=1911!!' THEN @cur_visit_type := 1
+                  WHEN obs REGEXP '!!1834=1246!!' THEN @cur_visit_type := 2
                   ELSE @cur_visit_type := null
               END AS cur_visit_type,
 			        CONCAT(COALESCE(person_name.given_name, ''),
@@ -272,9 +276,17 @@ BEGIN
                 ' ',
               COALESCE(person_name.family_name, '')) AS person_name,
               CASE
-                WHEN TIMESTAMPDIFF(YEAR, p.birthdate, curdate()) > 0 THEN round(TIMESTAMPDIFF(YEAR, p.birthdate, curdate()), 0)
-                ELSE ROUND(TIMESTAMPDIFF(MONTH, p.birthdate, curdate()) / 12, 2)
+                  WHEN TIMESTAMPDIFF(YEAR, p.birthdate, curdate()) > 0 THEN round(TIMESTAMPDIFF(YEAR, p.birthdate, curdate()), 0)
+                  ELSE ROUND(TIMESTAMPDIFF(MONTH, p.birthdate, curdate()) / 12, 2)
               END AS age,
+              CASE
+                  WHEN obs REGEXP '!!6266=1065' THEN @patient_covered_by_nhif := 1
+                  WHEN obs REGEXP '!!6266=1066' THEN @patient_covered_by_nhif := 2
+              END AS patient_covered_by_nhif,
+              CASE
+                  WHEN obs REGEXP '!!9745=9743' THEN @nhif_status := 1
+                  WHEN obs REGEXP '!!9745=9744' THEN @nhif_status := 2
+              END AS nhif_status,
               p.gender,
               GROUP_CONCAT(DISTINCT id.identifier SEPARATOR ', ') AS identifiers,
               CASE
@@ -398,10 +410,12 @@ BEGIN
                     encounter_type,
                     location_id,
 					          location_name,
-                    encounter_datetime,
+                    DATE(t1.encounter_datetime) AS encounter_date,
                     cur_visit_type,
                     person_name,
                     age,
+                    patient_covered_by_nhif,
+                    nhif_status,
                     gender,
                     identifiers,
                     cancer_type,
